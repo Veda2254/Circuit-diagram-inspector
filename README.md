@@ -33,7 +33,21 @@ Interactive PDF inspection tool for circuit diagrams with error logging to Excel
 ### 1. Install Python
 Make sure you have Python 3.8 or higher installed.
 
-### 2. Install Dependencies
+### 2. Clone the Repository
+
+```powershell
+git clone https://github.com/Veda2254/Circuit-diagram-inspector.git
+cd Circuit-diagram-inspector
+```
+
+### 3. Create Virtual Environment (Recommended)
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+### 4. Install Dependencies
 
 ```powershell
 pip install -r requirements.txt
@@ -58,7 +72,7 @@ python circuit_inspector.py
 2. **Set Cabinet ID**: Click "🆔 Set Cabinet ID" to enter the cabinet identifier (e.g., X-11-1)
 3. **Inspect Components**:
    - **Left Click** on components that are correct → Green checkmark appears
-   - **Right Click** on errors → Select error type from menu → Yellow marker appears
+   - **Right Click** on errors → Enter component name (e.g., "F1 fuse", "Wire X3-5") → Select error type from menu → Yellow marker appears
 4. **Navigate**: Use "◀ Prev" and "Next ▶" buttons to move between pages
 5. **Zoom**: Use "🔍+" and "🔍-" for detailed inspection
 6. **Save Work**: Click "💾 Save Annotations" to save your progress
@@ -66,9 +80,12 @@ python circuit_inspector.py
 
 ### Excel Output Format
 
-| Timestamp | Cabinet ID | Page | Component Type | Error Description | Inspector |
-|-----------|------------|------|----------------|-------------------|-----------|
-| 2025-11-24 10:30:45 | X-11-1 | 1 | Wire | Wire wrong | YourUsername |
+The error log includes the component name in the error description:
+
+| Timestamp | Cabinet ID | Page | Component Type | Error Description (Component + Error) | Inspector |
+|-----------|------------|------|----------------|---------------------------------------|-----------|
+| 2025-11-24 10:30:45 | X-11-1 | 1 | Wire | xyz fuse Wire wrong | YourUsername |
+| 2025-11-24 10:31:12 | X-11-1 | 2 | Fuse | F1 fuse Fuse missing | YourUsername |
 | 2025-11-24 10:31:12 | X-11-1 | 2 | Fuse | Fuse missing | YourUsername |
 
 ## Customization
