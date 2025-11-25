@@ -577,6 +577,13 @@ class CircuitInspector:
                 )
             menu.add_cascade(label=f"🔧 {category}", menu=cat_menu)
         
+        # Add Custom option at the end
+        menu.add_separator()
+        menu.add_command(
+            label="✏️ Custom Action Point",
+            command=lambda cx=x, cy=y, tn=tag_name, bb=bbox: self.log_custom_error(cx, cy, tn, bb)
+        )
+        
         # Show menu at cursor position
         try:
             menu.tk_popup(event.x_root, event.y_root)
@@ -716,6 +723,91 @@ class CircuitInspector:
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to log error: {str(e)}")
+    
+    def log_custom_error(self, x, y, tag_name, bbox):
+        """Log a custom error with user-defined action point and category"""
+        try:
+            from openpyxl.styles import Alignment, Border, Side
+            
+            # Ask for custom action point
+            custom_action = simpledialog.askstring(
+                "Custom Action Point", 
+                "Enter the action point/punch description:",
+                parent=self.root
+            )
+            
+            if not custom_action:
+                return  # User cancelled
+            
+            # Ask for custom category
+            custom_category = simpledialog.askstring(
+                "Custom Category", 
+                "Enter the category:",
+                parent=self.root
+            )
+            
+            if not custom_category:
+                return  # User cancelled
+            
+            # Add annotation
+            self.annotations.append({
+                'type': 'error',
+                'page': self.current_page,
+                'x': x / (2.0 * self.zoom_level),
+                'y': y / (2.0 * self.zoom_level),
+                'bbox': bbox,
+                'component': custom_category,
+                'tag_name': tag_name,
+                'error': 'Custom',
+                'punch_text': custom_action,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            # Log to Excel
+            wb = load_workbook(self.excel_file)
+            ws = wb.active
+            
+            # Find next empty row (starting from row 11)
+            row_num = 11
+            while ws[f'E{row_num}'].value is not None:
+                row_num += 1
+            
+            # Add data
+            ws[f'C{row_num}'] = self.current_sr_no  # Sr No.
+            # D column (Reference No.) left empty
+            ws[f'E{row_num}'] = custom_action  # Punch / Action Point
+            ws[f'F{row_num}'] = custom_category  # Category
+            ws[f'G{row_num}'] = os.getlogin()  # Checked By - Name
+            ws[f'H{row_num}'] = datetime.now().strftime("%Y-%m-%d")  # Checked By - Date
+            
+            # Apply formatting
+            thin_border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            
+            for col in ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']:
+                cell = ws[f'{col}{row_num}']
+                cell.border = thin_border
+                cell.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+            
+            # Increment Sr No for next entry
+            self.current_sr_no += 1
+            
+            wb.save(self.excel_file)
+            
+            self.display_page()
+            
+            # Show confirmation
+            self.root.after(100, lambda: messagebox.showinfo(
+                "Logged", 
+                f"Custom error logged:\n{custom_action}\nCategory: {custom_category}"
+            ))
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to log custom error: {str(e)}")
     
     def prev_page(self):
         """Go to previous page"""
