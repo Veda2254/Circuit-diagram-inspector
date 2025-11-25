@@ -33,12 +33,37 @@ class CircuitInspector:
         self.current_sr_no = 1
         self.current_page_image = None  # Store current page image for contour detection
         
-        # Error categories
+        # Error categories with hierarchical structure
         self.error_categories = {
-            'Wire': ['Wire wrong', 'Ferrule direction wrong', 'Wiring not present'],
-            'Fuse': ['Fuse missing', 'Wrong fuse rating', 'Fuse orientation wrong'],
-            'Component': ['Missing component', 'Wrong material installation', 'Missing material', 'Wrong component type'],
-            'General': ['Assembly error', 'Labeling error', 'Connection loose', 'Other']
+            'Material Shortfall': {
+                'Component Missing': '{tag} missing',
+                'TB Group Missing': '{tag} TB group missing',
+                'Fuse Missing': '{tag} Fuse missing',
+                'Label Missing': '{tag} Label missing',
+                'KLM Marker Missing': '{tag} KLMA Marker Missing',
+                'End stopper missing': 'End stopper near {tag} missing',
+                'Short link missing': '{tag} TB Group {terminals} shortlink missing'
+            },
+            'Wrong Wiring': {
+                'Wires Interchanges': '{tag} Wires Interchanges',
+                'Color Code Wrong': '{tag} Color Code Wrong',
+                'Ferrule Wrong': '{tag} Ferrule Wrong',
+                'Size Wrong': '{tag} Size Wrong',
+                'Wire Loose Found': '{tag} Wire Loose Found',
+                'Lug not properly cut': '{tag} Lug not properly cut'
+            },
+            'Incomplete Wiring': {
+                'All wiring Incomplete with connections pending': '{tag} All wiring Incomplete with connections pending',
+                'Connections pending': '{tag} Connections pending'
+            },
+            'Wrong Assembly': {
+                'Label Wrong installed': '{tag} Label Wrong installed',
+                'Fuse Wrong installed': '{tag} Fuse Wrong installed',
+                'Wire duct Wrong Installed': '{tag} Wire duct Wrong Installed',
+                'Component Wrong installed': '{tag} Component Wrong installed',
+                'Component not properly fixed': '{tag} Component not properly fixed',
+                'End stopper loose found': '{tag} End stopper loose found'
+            }
         }
         
         self.setup_ui()
@@ -256,28 +281,68 @@ class CircuitInspector:
     def update_excel_headers(self):
         """Update Excel file with project details"""
         try:
-            from openpyxl.styles import Alignment
+            import os
+            excel_path = os.path.abspath(self.excel_file)
+            print(f"Updating Excel file: {excel_path}")
+            print(f"Headers: Project='{self.project_name}', Sales='{self.sales_order_no}', Cabinet='{self.cabinet_id}'")
+            
             wb = load_workbook(self.excel_file)
             ws = wb.active
             
-            # Update project name (merged cell C4:Q4)
+            # Unmerge all cells first, then write values, then re-merge
+            merged_ranges = []
+            
+            # Store all merged cell ranges
+            for merged_range in list(ws.merged_cells.ranges):
+                merged_ranges.append(str(merged_range))
+            
+            # Unmerge all
+            for merged_range in merged_ranges:
+                try:
+                    ws.unmerge_cells(merged_range)
+                except:
+                    pass
+            
+            # Write values to the correct cells based on the actual merged ranges
+            # Project Name: E4:M4 (column E = 5)
             if self.project_name:
-                ws['C4'] = self.project_name
-                ws['C4'].alignment = Alignment(horizontal='center', vertical='center')
+                ws.cell(row=4, column=5, value=self.project_name)
+                print(f"✓ Wrote '{self.project_name}' to cell E4")
             
-            # Update sales order (merged cell C6:I6)
+            # Sales Order No: E6:H6 (column E = 5)
             if self.sales_order_no:
-                ws['C6'] = self.sales_order_no
-                ws['C6'].alignment = Alignment(horizontal='center', vertical='center')
+                ws.cell(row=6, column=5, value=self.sales_order_no)
+                print(f"✓ Wrote '{self.sales_order_no}' to cell E6")
             
-            # Update cabinet ID (merged cell J6:Q6)
+            # Cabinet ID: K6:L6 (column K = 11)
             if self.cabinet_id:
-                ws['J6'] = self.cabinet_id
-                ws['J6'].alignment = Alignment(horizontal='center', vertical='center')
+                ws.cell(row=6, column=11, value=self.cabinet_id)
+                print(f"✓ Wrote '{self.cabinet_id}' to cell K6")
+            
+            # Re-merge cells
+            for merged_range in merged_ranges:
+                try:
+                    ws.merge_cells(merged_range)
+                except:
+                    pass
             
             wb.save(self.excel_file)
+            wb.close()
+            print(f"✓ Excel file saved and closed: {excel_path}")
+            print("IMPORTANT: Close and reopen the Excel file to see the changes!")
+            
+            messagebox.showinfo("Excel Updated", 
+                              f"Excel file updated successfully!\n\n"
+                              f"Project: {self.project_name}\n"
+                              f"Sales Order: {self.sales_order_no}\n"
+                              f"Cabinet ID: {self.cabinet_id}\n\n"
+                              f"If Excel is open, close and reopen it to see changes.")
+            
         except Exception as e:
-            print(f"Warning: Could not update Excel headers: {e}")
+            print(f"❌ Error updating Excel headers: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Excel Error", f"Failed to update Excel: {str(e)}")
     
     def detect_component_at_point(self, x, y, img_array):
         """Detect component contour at the clicked point - simplified with fixed size"""
@@ -397,14 +462,14 @@ class CircuitInspector:
             default_size = 20
             bbox = (x - default_size, y - default_size, x + default_size, y + default_size)
         
-        # Ask for component name/label
-        component_name = simpledialog.askstring(
-            "Component Name", 
-            "Enter component name/label (e.g., 'F1 fuse', 'Wire X3-5'):",
+        # Ask for Tag Details
+        tag_name = simpledialog.askstring(
+            "Tag Details", 
+            "Enter Tag Details (e.g., 'TB1', 'R5', 'F1'):",
             parent=self.root
         )
         
-        if not component_name:
+        if not tag_name:
             return  # User cancelled
         
         # Create context menu
@@ -412,23 +477,34 @@ class CircuitInspector:
         
         for category, errors in self.error_categories.items():
             cat_menu = Menu(menu, tearoff=0)
-            for error in errors:
+            for error_name, error_template in errors.items():
                 cat_menu.add_command(
-                    label=error,
-                    command=lambda e=error, c=category, cx=x, cy=y, cn=component_name, bb=bbox: self.log_error(c, e, cx, cy, cn, bb)
+                    label=error_name,
+                    command=lambda en=error_name, et=error_template, c=category, cx=x, cy=y, tn=tag_name, bb=bbox: self.log_error(c, en, et, cx, cy, tn, bb)
                 )
             menu.add_cascade(label=f"🔧 {category}", menu=cat_menu)
         
         # Show menu at cursor position
         menu.tk_popup(event.x_root, event.y_root)
     
-    def log_error(self, component_type, error_description, x, y, component_name, bbox):
+    def log_error(self, component_type, error_name, error_template, x, y, tag_name, bbox):
         """Log an error to Excel and add annotation"""
         try:
             from openpyxl.styles import Alignment, Border, Side
             
-            # Create detailed error message
-            detailed_error = f"{component_name} {error_description}"
+            # Handle special case for short link missing (needs terminals input)
+            if error_name == 'Short link missing':
+                terminals = simpledialog.askstring(
+                    "Terminals", 
+                    "Enter terminals where shortlink is expected (e.g., '1-2', '5-6-7'):",
+                    parent=self.root
+                )
+                if not terminals:
+                    return  # User cancelled
+                punch_text = error_template.format(tag=tag_name, terminals=terminals)
+            else:
+                # Format the punch text with tag name
+                punch_text = error_template.format(tag=tag_name)
             
             # Add annotation
             self.annotations.append({
@@ -438,8 +514,9 @@ class CircuitInspector:
                 'y': y / (2.0 * self.zoom_level),
                 'bbox': bbox,
                 'component': component_type,
-                'component_name': component_name,
-                'error': error_description,
+                'tag_name': tag_name,
+                'error': error_name,
+                'punch_text': punch_text,
                 'timestamp': datetime.now().isoformat()
             })
             
@@ -449,12 +526,16 @@ class CircuitInspector:
             
             # Find next empty row (starting from row 11)
             row_num = 11
-            while ws[f'C{row_num}'].value is not None:
+            while ws[f'E{row_num}'].value is not None:
                 row_num += 1
             
-            # Add data - only Punch/Action Point and Category
-            ws[f'E{row_num}'] = detailed_error  # Punch / Action Point
+            # Add data - with Sr No. but NO Reference No.
+            ws[f'C{row_num}'] = self.current_sr_no  # Sr No.
+            # D column (Reference No.) left empty
+            ws[f'E{row_num}'] = punch_text  # Punch / Action Point
             ws[f'F{row_num}'] = component_type  # Category
+            ws[f'G{row_num}'] = os.getlogin()  # Checked By - Name
+            ws[f'H{row_num}'] = datetime.now().strftime("%Y-%m-%d")  # Checked By - Date
             
             # Apply formatting
             thin_border = Border(
@@ -469,6 +550,9 @@ class CircuitInspector:
                 cell.border = thin_border
                 cell.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
             
+            # Increment Sr No for next entry
+            self.current_sr_no += 1
+            
             wb.save(self.excel_file)
             
             self.display_page()
@@ -476,7 +560,7 @@ class CircuitInspector:
             # Show confirmation
             self.root.after(100, lambda: messagebox.showinfo(
                 "Logged", 
-                f"Error logged: {detailed_error}"
+                f"Error logged: {punch_text}"
             ))
             
         except Exception as e:
@@ -513,7 +597,12 @@ class CircuitInspector:
             return
         
         try:
-            save_file = f"{self.cabinet_id}_annotations.json"
+            # Create annotations folder if it doesn't exist
+            annotations_folder = "annotations"
+            if not os.path.exists(annotations_folder):
+                os.makedirs(annotations_folder)
+            
+            save_file = os.path.join(annotations_folder, f"{self.cabinet_id}_annotations.json")
             with open(save_file, 'w') as f:
                 json.dump(self.annotations, f, indent=2)
             
